@@ -5,3 +5,6 @@
 /paper_results/results/
 /results/
 /demonstration/
+
+__pycache__/
+*.csv

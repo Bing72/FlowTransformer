@@ -47,6 +47,77 @@ Finally, FlowTransformer has a built in training and evaluation method, which re
 
 However, the `model` object can be used in part of custom training loops. 
 
+## Using CICFlowMeter Datasets
+
+FlowTransformer includes built-in support for datasets generated with [CICFlowMeter](https://github.com/ahlashkari/CICFlowMeter). The framework comes with a pre-configured dataset specification that matches the standard CICFlowMeter output format.
+
+### Quick Start with CICFlowMeter
+
+1. **Generate your dataset** using CICFlowMeter to create a CSV file from network traffic
+2. **Use our demo scripts** to get started quickly:
+
+#### Option 1: Python Script
+```bash
+python cicflowmeter_demo.py
+```
+
+Edit the `dataset_path` variable in the script to point to your CICFlowMeter CSV file.
+
+#### Option 2: Jupyter Notebook
+Open `cicflowmeter_demo.ipynb` and follow the step-by-step guide:
+1. Set your dataset path in the configuration cell
+2. Run all cells sequentially
+3. View training results and model performance
+
+### Manual Configuration
+
+If you prefer to configure manually, use the `cse_cic_ids_2018_improved` dataset specification:
+
+```python
+from framework.dataset_specification import NamedDatasetSpecifications
+
+# CICFlowMeter dataset specification
+dataset_spec = NamedDatasetSpecifications.cse_cic_ids_2018_improved
+
+# Standard setup
+ft = FlowTransformer(
+    pre_processing=StandardPreProcessing(n_categorical_levels=32),
+    input_encoding=NoInputEncoder(),
+    sequential_model=BasicTransformer(2, 128, n_heads=2),
+    classification_head=LastTokenClassificationHead(),
+    params=FlowTransformerParameters(window_size=8, mlp_layer_sizes=[128], mlp_dropout=0.1)
+)
+
+# Load your CICFlowMeter dataset
+ft.load_dataset(
+    "My_CICFlowMeter_Dataset", 
+    "path/to/your/cicflowmeter_output.csv",
+    dataset_spec,
+    evaluation_dataset_sampling=EvaluationDatasetSampling.RandomRows,
+    evaluation_percent=0.2
+)
+
+# Build and train
+model = ft.build_model()
+model.compile(optimizer="adam", loss='binary_crossentropy', metrics=['binary_accuracy'])
+train_results, eval_results, final_epoch = ft.evaluate(model, batch_size=128, epochs=10)
+```
+
+### Supported CICFlowMeter Features
+
+The framework automatically handles:
+- **All 79 standard CICFlowMeter features** including flow duration, packet statistics, IAT analysis, flag counts, etc.
+- **Categorical feature encoding** for ports, protocols, and flags
+- **Automatic data preprocessing** with outlier handling and normalization
+- **Binary classification** using the "Label" column (BENIGN vs. attack types)
+
+### Performance Tips
+
+- **Use caching**: Specify a `cache_folder` parameter to speed up repeated experiments
+- **Adjust batch size**: Start with 128 and adjust based on your memory constraints  
+- **Window size tuning**: Try different window sizes (4, 8, 16) for optimal sequence modeling
+- **Early stopping**: Use patience=5 to prevent overfitting
+
 ## Implementing your own solutions with FlowTransformer
 
 ### Ingesting custom data formats

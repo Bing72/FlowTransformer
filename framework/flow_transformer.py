@@ -62,14 +62,18 @@ class FlowTransformer:
 
         m_inputs = []
         for numeric_feature in self.model_input_spec.numeric_feature_names:
-            m_input = Input((self.parameters.window_size, 1), name=f"{prefix}input_{numeric_feature}", dtype="float32")
+            # Keras Input layer names cannot contain '/' character, so replace with '_'
+            safe_feature_name = numeric_feature.replace('/', '_').replace(' ', '_')
+            m_input = Input((self.parameters.window_size, 1), name=f"{prefix}input_{safe_feature_name}", dtype="float32")
             m_inputs.append(m_input)
 
         for categorical_feature_name, categorical_feature_levels in \
             zip(self.model_input_spec.categorical_feature_names, self.model_input_spec.levels_per_categorical_feature):
+            # Keras Input layer names cannot contain '/' character, so replace with '_'
+            safe_categorical_name = categorical_feature_name.replace('/', '_').replace(' ', '_')
             m_input = Input(
                 (self.parameters.window_size, 1 if self.model_input_spec.categorical_format == CategoricalFormat.Integers else categorical_feature_levels),
-                name=f"{prefix}input_{categorical_feature_name}",
+                name=f"{prefix}input_{safe_categorical_name}",
                 dtype="int32" if self.model_input_spec.categorical_format == CategoricalFormat.Integers else "float32"
             )
             m_inputs.append(m_input)
@@ -325,9 +329,23 @@ class FlowTransformer:
 
         y_mask = ~(self.y.astype('str') == str(self.dataset_specification.benign_label))
 
+        # Debug: Print class distribution
+        unique_labels, counts = np.unique(self.y.astype('str'), return_counts=True)
+        print(f"\n=== 클래스 분포 디버깅 ===")
+        print(f"전체 클래스 분포:")
+        for label, count in zip(unique_labels, counts):
+            print(f"  '{label}': {count:,} 개")
+        print(f"설정된 benign_label: '{self.dataset_specification.benign_label}'")
+        print(f"악성 샘플 수 (y_mask=True): {np.sum(y_mask):,}")
+        print(f"정상 샘플 수 (y_mask=False): {np.sum(~y_mask):,}")
+
         indices_train = np.argwhere(train_mask).reshape(-1)
         malicious_indices_train = np.argwhere(train_mask & y_mask & selectable_mask).reshape(-1)
         legit_indices_train = np.argwhere(train_mask & ~y_mask & selectable_mask).reshape(-1)
+        
+        print(f"학습용 악성 샘플 수: {len(malicious_indices_train):,}")
+        print(f"학습용 정상 샘플 수: {len(legit_indices_train):,}")
+        print("========================\n")
 
         indices_test:np.ndarray = np.argwhere(~train_mask).reshape(-1)
 
@@ -516,10 +534,16 @@ class FlowTransformer:
 
             do_early_stop = early_stopping_patience > 0 and iters_since_loss_decrease > early_stopping_patience
             is_last_epoch = epoch == epochs - 1
-            run_eval = epoch in [6] or is_last_epoch or do_early_stop
+            run_eval = epoch in [6] or is_last_epoch or do_early_stop or epoch % 2 == 0  # 매 2 에포크마다 평가
 
             if run_eval:
                 run_evaluation(epoch)
+                # 성능이 너무 좋으면 조기 종료 (과적합 방지)
+                if len(epoch_results) > 0:
+                    current_bal_acc = epoch_results[-1]['bal_acc']
+                    if current_bal_acc > 0.995:  # 99.5% 이상이면 조기 종료
+                        print(f"조기 종료: 과적합 방지 (Balanced Accuracy: {current_bal_acc*100:.2f}%)")
+                        break
 
             if do_early_stop:
                 print(f"Early stopping at epoch: {epoch}")
